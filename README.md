@@ -1,189 +1,165 @@
-# AI4Cyber — Assignment 3 (Full‑Stack ML Web App)
+# AI4Cyber — Assignment 3 (Full-Stack ML Web App)
 
-A minimal, end‑to‑end web app: the user submits text in the **front end**, the **FastAPI** back end runs your **Assignment‑2 (A2)** pipeline and returns a prediction, and the front end visualises results with charts.
+A minimal end-to-end app: the **React** front end sends text to a **FastAPI** backend, which runs your **Assignment-2 (A2)** model and returns a prediction. The UI visualises results (Chart.js doughnut) and handles errors cleanly.
 
-- **Front end:** React (Create React App, JavaScript) + MUI + Axios + Chart.js  
-- **Back end:** FastAPI + Pydantic + joblib (loads your A2 artifacts)  
-- **Python:** **3.12.7** (use this exact version for the backend)
+- **Front end:** React (CRA, JS) · MUI · Axios · Chart.js  
+- **Back end:** FastAPI · Pydantic · joblib (loads A2 artifacts)  
+- **Python:** **3.12.7** (use this exact version for backend)
 
-> **Keep training–serving parity.** Use the same preprocessing and compatible library versions as A2 so `model.pkl` / `vectorizer.pkl` load reliably.
+> **Training–serving parity:** keep preprocessing and compatible `scikit-learn/joblib` versions between A2 training and A3 serving.
 
 ---
 
-## 1) Repository layout (what goes where)
+## Contents
+1. [Repository layout](#repository-layout)
+2. [Prerequisites](#prerequisites)
+3. [Quick start](#quick-start)
+4. [Modes: Stub vs Real Artifacts](#modes-stub-vs-real-artifacts)
+5. [API (baseline)](#api-baseline)
+6. [Verify & test](#verify--test)
+7. [Troubleshooting](#troubleshooting)
+8. [Submission checklist](#submission-checklist)
 
-```
+---
+
+## Repository layout
+
 ai4cyber-a3/
 ├─ backend/
-│  ├─ app/
-│  │  └─ main.py            # FastAPI entrypoint
-│  ├─ models/
-│  │  ├─ vectorizer.pkl     # from A2
-│  │  └─ model.pkl          # from A2
-│  ├─ requirements.txt      # backend Python deps (see §3.2)
-│  └─ .env.example
+│ ├─ app/main.py # FastAPI app (health, version, predict endpoints)
+│ ├─ models/ # A2 artifacts go here
+│ │ ├─ vectorizer.pkl # (spam) from A2
+│ │ └─ model.pkl # (spam) from A2
+│ │ ├─ malware_logreg_cv.joblib #  pipeline
+│ │ └─ malware_feature_columns.json #  ordered feature list
+│ ├─ requirements.txt
+│ └─ .env.example
 ├─ frontend/
-│  ├─ src/
-│  │  ├─ pages/{Predict.js,Visualize.js,Batch.js}
-│  │  ├─ api/client.js
-│  │  └─ components/{ProbabilityDoughnut.js}
-│  └─ .env.example
+│ ├─ src/
+│ │ ├─ pages/Predict.js
+│ │ ├─ components/ProbabilityDoughnut.js
+│ │ ├─ components/HeroTitle.js
+│ │ └─ api/client.js
+│ └─ package.json
 └─ README.md
-```
+
+yaml
+Copy code
 
 ---
 
-## 2) Prerequisites
-
-- **Python:** 3.12.7 (confirm with `py -3.12 --version` on Windows or `python3.12 --version` on macOS/Linux)  
-- **Node.js:** 18 LTS or 20 LTS  
-- **Artifacts from A2:** place `vectorizer.pkl` and `model.pkl` in `backend/models/`
-
-*(Optional, best reproducibility): in your A2 venv, run `pip freeze > constraints-a2.txt` and later install A3 with `-c constraints-a2.txt`.*
+## Prerequisites
+- **Python** 3.12.7  
+- **Node.js** 18/20 LTS and **npm** 9+
+- (Optional) Your A2 training scripts to regenerate artifacts
 
 ---
 
-## 3) Backend (FastAPI, Python 3.12.7)
+## Quick start
 
-### 3.1 Create & activate venv; install deps (inside `backend/`)
-
-**Windows (PowerShell)**
-```powershell
-cd backend
-py -3.12 --version                     # should print 3.12.7
-py -3.12 -m venv .venv
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-. .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-# Optional strict pin (if you exported A2 constraints):
-# pip install -r requirements.txt -c constraints-a2.txt
-```
-
-**macOS / Linux**
+### 1) Backend
 ```bash
 cd backend
-python3.12 --version                   # should print 3.12.7
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
+python -m venv .venv
+# Windows:  .\.venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-# Optional strict pin:
-# pip install -r requirements.txt -c constraints-a2.txt
-```
+Create backend/.env:
 
-### 3.2 `backend/requirements.txt`
-
-This file contains the FastAPI web stack **plus** the A2 libraries you used (same `>=` style as A2).  
-*(A copy is included with this README; place it at `backend/requirements.txt`.)*
-
-```txt
-# --- Web stack (A3 backend) ---
-fastapi==0.115.4
-uvicorn[standard]==0.30.6
-pydantic==2.8.2
-python-dotenv==1.0.1
-
-# --- Your A2 libraries (same >= ranges as A2) ---
-pandas>=2.0
-numpy>=1.24
-scikit-learn>=1.3
-scipy>=1.10
-matplotlib>=3.7
-joblib>=1.3
-beautifulsoup4>=4.12
-lxml>=4.9
-seaborn>=0.12
-nltk>=3.8
-```
-
-### 3.3 Environment & run
-
-Create `backend/.env` from the example:
-
-```env
-API_HOST=0.0.0.0
-API_PORT=8000
+env
+Copy code
 CORS_ORIGINS=http://localhost:3000
 MODEL_NAME=a2_spam_rf_tfidf
-```
+MODEL_STUB=1                 # 1 = stub mode (no artifacts needed), 0 = real model
+MAX_TEXT_LEN=5000
+MAX_REQUEST_BYTES=65536
 
-Run the API:
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-Quick checks:
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/version
-```
-
-Smoke prediction:
-```bash
-curl -X POST http://localhost:8000/predict/spam \
- -H "Content-Type: application/json" \
- -d "{\"text\": \"Limited time offer, click here to win\"}"
-```
-
----
-
-## 4) Frontend (Create React App)
-
-```bash
-cd frontend
-npx create-react-app .
-npm i @mui/material @emotion/react @emotion/styled @mui/icons-material
-npm i axios chart.js react-chartjs-2 react-router-dom
-```
-
-Create `frontend/.env`:
-```env
-REACT_APP_API_BASE_URL=http://localhost:8000
-```
-
+# Only used when MODEL_STUB=0
+SPAM_VEC_PATH=models/vectorizer.pkl
+SPAM_MODEL_PATH=models/model.pkl
+MALWARE_PIPE_PATH=models/malware_logreg_cv.joblib
+MALWARE_FEATURES_PATH=models/malware_feature_columns.json
 Run:
-```bash
-npm start   # http://localhost:3000
-```
 
-*(Optional) dev proxy instead of `.env`: add to `frontend/package.json`)*
-```json
-"proxy": "http://localhost:8000"
-```
+bash
+Copy code
+uvicorn app.main:app --reload --port 8000
+# Swagger: http://localhost:8000/docs
+2) Frontend
+bash
+Copy code
+cd frontend
+npm install
+npm start
+# open http://localhost:3000
+Paste some text and click Detect Spam.
 
----
+Modes: Stub vs Real Artifacts
+Stub (default, fastest)
+MODEL_STUB=1 in .env
 
-## 5) API endpoints (Sprint‑1 baseline)
+Backend returns heuristic probabilities → perfect for wiring up and demoing error handling.
 
-- **GET `/health`** → `{"status":"ok"}`  
-- **GET `/version`** → `{"api":"1.0.0","model":"a2_spam_rf_tfidf"}`  
-- **POST `/predict/spam`**  
-  **Request**: `{"subject":"optional","text":"..."}`  
-  **Response**:
-  ```json
-  {"label":"spam|ham","probability":0.0-1.0,"model":"...","elapsed_ms":45,"id":"req_..."}
-  ```
+Real artifacts (A2)
+Generate from your A2 scripts (names may vary):
 
-*(Next sprints)*
-- **GET `/metrics/spam`** → confusion matrix + ROC arrays  
-- **POST `/predict/spam-batch`** → batch predictions
+bash
+Copy code
+python spam_random_forest.py
+python malware_logistic_regression.py
+Copy outputs into backend/models/ (or update paths in .env).
 
----
+Set MODEL_STUB=0 and restart Uvicorn.
 
-## 6) Visualisations (front end)
+GET /health should show "stub": false and "spam_available": true (and malware if provided).
 
-- **Doughnut (Chart.js):** spam vs ham probability (single prediction)  
-- **Confusion matrix:** Chart.js matrix (or grouped bars)  
-- **ROC:** Chart.js line (show AUC in subtitle)
+API (baseline)
+Method	Path	Purpose
+GET	/health	Service + model readiness
+GET	/version	API version, model name, stub
+POST	/predict/spam	Spam probability + label
+POST	/predict/malware	(optional) requires real pipeline
 
----
+Spam request
 
-## 7) Submission checklist (quick)
+bash
+Copy code
+curl -s -X POST http://localhost:8000/predict/spam \
+  -H "Content-Type: application/json" \
+  -d '{"subject": null, "text": "win a FREE prize click here"}'
+Example success
 
-- Zip source (exclude `frontend/node_modules`), **include** `backend/models/*.pkl`  
-- README (this), any docs/examples; minutes (PDF); contribution form (PDF)  
-- Video (≤7 min): predict flow, charts, batch, responsiveness, `/docs`  
-- Report (≤8 pages): architecture, FE/BE details, ≥4 APIs, error handling, limitations/future
+json
+Copy code
+{
+  "label": "spam",
+  "probability": 0.91,
+  "model": "a2_spam_rf_tfidf",
+  "elapsed_ms": 34,
+  "id": "req_6f1c2a9b"
+}
+Verify & test
+Health/Version
 
-**Done.** Place this README at repo root, and `requirements.txt` under `backend/`.
+bash
+Copy code
+curl -s http://localhost:8000/health
+curl -s http://localhost:8000/version
+Predict (good / error cases)
+
+Valid text → chip + doughnut in UI
+
+Empty text → FE blocks; BE would return 422 VALIDATION_ERROR
+
+Oversize body → 413 (payload guard)
+
+Stop backend → UI shows friendly Network Error
+
+Troubleshooting
+Network Error (frontend): backend not running on :8000 or wrong baseURL.
+
+CORS in browser: set CORS_ORIGINS=http://localhost:3000 and restart backend.
+
+MODEL_NOT_LOADED (500): you set MODEL_STUB=0 but artifacts missing or incompatible. Restore MODEL_STUB=1 or fix paths/versions.
+
+Different sklearn versions: ensure training and serving use compatible versions (pin in requirements.txt).
